@@ -37,10 +37,7 @@
 
 #define     CONFSTR_VM_REFRESH_INTERVAL       "playback_status.refresh_interval"
 #define     CONFSTR_VM_NUM_LINES              "playback_status.num_lines"
-#define     CONFSTR_VM_FONT_NAME              "playback_status.font."
 #define     CONFSTR_VM_FORMAT                 "playback_status.format."
-#define     CONFSTR_VM_COLORS                 "playback_status.color."
-#define     CONFSTR_VM_COLOR_BG               "playback_status.color.background"
 
 /* Global variables */
 static DB_misc_t            plugin;
@@ -48,46 +45,29 @@ static DB_functions_t *     deadbeef = NULL;
 static ddb_gtkui_t *        gtkui_plugin = NULL;
 
 typedef struct {
-    char *format;
-    PangoFontDescription *desc;
-    GdkColor clr;
-} text_context_t;
-
-typedef struct {
     ddb_gtkui_widget_t base;
-    GtkWidget *drawarea;
+    GtkWidget *label[MAX_LINES];
     GtkWidget *popup;
     GtkWidget *popup_item;
     cairo_surface_t *surf;
+    char *bytecode[MAX_LINES];
     guint drawtimer;
     intptr_t mutex;
 } w_playback_status_t;
 
 static int CONFIG_REFRESH_INTERVAL = 100;
 static int CONFIG_NUM_LINES = 3;
-static const gchar *CONFIG_FONTS[MAX_LINES];
 static const gchar *CONFIG_FORMAT[MAX_LINES];
-static GdkColor CONFIG_COLORS[MAX_LINES];
-static GdkColor CONFIG_COLOR_BG;
-static PangoFontDescription *font_desc[MAX_LINES];
 
 static void
 save_config (void)
 {
     deadbeef->conf_set_int (CONFSTR_VM_REFRESH_INTERVAL,            CONFIG_REFRESH_INTERVAL);
     deadbeef->conf_set_int (CONFSTR_VM_NUM_LINES,            CONFIG_NUM_LINES);
-    char conf_font_str[100];
     char conf_format_str[100];
-    char conf_color_str[100];
-    char color[100];
     for (int i = 0; i < CONFIG_NUM_LINES; i++) {
-        snprintf (conf_font_str, sizeof (conf_font_str), "%s%02d", CONFSTR_VM_FONT_NAME, i);
-        deadbeef->conf_set_str (conf_font_str, CONFIG_FONTS[i]);
         snprintf (conf_format_str, sizeof (conf_format_str), "%s%02d", CONFSTR_VM_FORMAT, i);
         deadbeef->conf_set_str (conf_format_str, CONFIG_FORMAT[i]);
-        snprintf (color, sizeof (color), "%d %d %d", CONFIG_COLORS[i].red, CONFIG_COLORS[i].green, CONFIG_COLORS[i].blue);
-        snprintf (conf_color_str, sizeof (conf_color_str), "%s%02d", CONFSTR_VM_COLORS, i);
-        deadbeef->conf_set_str (conf_color_str, color);
     }
     return;
 }
@@ -98,48 +78,29 @@ load_config (gpointer user_data)
     w_playback_status_t *w = user_data;
     deadbeef->mutex_lock (w->mutex);
     for (int i = 0; i < MAX_LINES; i++) {
-        if (CONFIG_FONTS[i])
-            g_free ((gchar *)CONFIG_FONTS[i]);
         if (CONFIG_FORMAT[i])
             g_free ((gchar *)CONFIG_FORMAT[i]);
-        if (font_desc[i]) {
-            pango_font_description_free(font_desc[i]);
-        }
     }
     deadbeef->conf_lock ();
     CONFIG_REFRESH_INTERVAL = deadbeef->conf_get_int (CONFSTR_VM_REFRESH_INTERVAL,          100);
     CONFIG_NUM_LINES = deadbeef->conf_get_int (CONFSTR_VM_NUM_LINES,          3);
-    const char *color;
-    char conf_font_str[100];
-    char conf_format_str[100];
-    char conf_color_str[100];
+
+    char conf_format_str[1024];
     for (int i = 0; i < CONFIG_NUM_LINES; i++) {
-        snprintf (conf_font_str, sizeof (conf_font_str), "%s%02d", CONFSTR_VM_FONT_NAME, i);
         snprintf (conf_format_str, sizeof (conf_format_str), "%s%02d", CONFSTR_VM_FORMAT, i);
         if (i == 0) {
-            CONFIG_FONTS[i] = strdup (deadbeef->conf_get_str_fast (conf_font_str, "Sans Bold 14"));
-            CONFIG_FORMAT[i] = strdup (deadbeef->conf_get_str_fast (conf_format_str, "%e / %l"));
+            CONFIG_FORMAT[i] = strdup (deadbeef->conf_get_str_fast (conf_format_str, "<span foreground='grey' weight='bold' size='medium'>%playback_time% / %length%</span>"));
         }
         else if (i == 1) {
-            CONFIG_FONTS[i] = strdup (deadbeef->conf_get_str_fast (conf_font_str, "Sans 12"));
-            CONFIG_FORMAT[i] = strdup (deadbeef->conf_get_str_fast (conf_format_str, "%n. %t"));
+            CONFIG_FORMAT[i] = strdup (deadbeef->conf_get_str_fast (conf_format_str, "<span weight='bold' size='x-large'>%tracknumber%. %title%</span>"));
         }
         else if (i== 2) {
-            CONFIG_FONTS[i] = strdup (deadbeef->conf_get_str_fast (conf_font_str, "Sans 10"));
-            CONFIG_FORMAT[i] = strdup (deadbeef->conf_get_str_fast (conf_format_str, "%B - (%y) %b"));
+            CONFIG_FORMAT[i] = strdup (deadbeef->conf_get_str_fast (conf_format_str, "%album% - <i>%album artist%</i>"));
         }
         else {
-            CONFIG_FONTS[i] = strdup (deadbeef->conf_get_str_fast (conf_font_str, "Sans 10"));
             CONFIG_FORMAT[i] = strdup (deadbeef->conf_get_str_fast (conf_format_str, ""));
         }
-        font_desc[i] = pango_font_description_from_string(CONFIG_FONTS[i]);
-
-        snprintf (conf_color_str, sizeof (conf_color_str), "%s%02d", CONFSTR_VM_COLORS, i);
-        color = deadbeef->conf_get_str_fast (conf_color_str, "0 0 0");
-        sscanf (color, "%hd %hd %hd", &(CONFIG_COLORS[i].red), &(CONFIG_COLORS[i].green), &(CONFIG_COLORS[i].blue));
     }
-    //const char *color;
-    //sscanf (color, "%hd %hd %hd", &CONFIG_COLOR_BG.red, &CONFIG_COLOR_BG.green, &CONFIG_COLOR_BG.blue);
 
     deadbeef->conf_unlock ();
     deadbeef->mutex_unlock (w->mutex);
@@ -150,26 +111,36 @@ on_config_changed (gpointer user_data, uintptr_t ctx)
 {
     w_playback_status_t *w = user_data;
     load_config (user_data);
+    for (int i = 0; i < MAX_LINES; i++) {
+        if (w->bytecode[i]) {
+            deadbeef->tf_free (w->bytecode[i]);
+            w->bytecode[i] = NULL;
+        }
+        if (i < CONFIG_NUM_LINES) {
+            gtk_widget_show (w->label[i]);
+            w->bytecode[i] = deadbeef->tf_compile (CONFIG_FORMAT[i]);
+        }
+        else {
+            gtk_widget_hide (w->label[i]);
+        }
+    }
     return 0;
 }
 
-static GtkWidget *hbox[MAX_LINES];
-static GtkWidget *font[MAX_LINES];
-static GtkWidget *color[MAX_LINES];
 static GtkWidget *format[MAX_LINES];
 
 static gboolean
 on_num_lines_changed (GtkSpinButton *spin, gpointer user_data)
 {
-    GtkWidget *w = (GtkWidget *)user_data;
+    w_playback_status_t *w = user_data;
 
     int value = gtk_spin_button_get_value_as_int (spin);
     for (int i = 0; i < MAX_LINES; i++) {
         if (i < value) {
-            gtk_widget_show (hbox[i]);
+            gtk_widget_show (format[i]);
         }
         else {
-            gtk_widget_hide (hbox[i]);
+            gtk_widget_hide (format[i]);
         }
     }
     return TRUE;
@@ -212,34 +183,13 @@ on_button_config (GtkMenuItem *menuitem, gpointer user_data)
     g_signal_connect_after ((gpointer) num_lines, "value-changed", G_CALLBACK (on_num_lines_changed), user_data);
 
     for (int i = 0; i < MAX_LINES; i++) {
-        hbox[i] = gtk_hbox_new (FALSE, 8);
-        if (i < CONFIG_NUM_LINES) {
-            gtk_widget_show (hbox[i]);
-        }
-        else {
-            gtk_widget_hide (hbox[i]);
-        }
-        gtk_box_pack_start (GTK_BOX (vbox01), hbox[i], TRUE, FALSE, 0);
-
         format[i] = gtk_entry_new ();
         gtk_widget_show (format[i]);
         gtk_entry_set_invisible_char (GTK_ENTRY (format[i]), 8226);
         gtk_entry_set_activates_default (GTK_ENTRY (format[i]), TRUE);
-        gtk_box_pack_start (GTK_BOX (hbox[i]), format[i], FALSE, FALSE, 0);
+        gtk_box_pack_start (GTK_BOX (vbox01), format[i], FALSE, FALSE, 0);
         if (CONFIG_FORMAT [i]) {
             gtk_entry_set_text (GTK_ENTRY (format[i]), CONFIG_FORMAT[i]);
-        }
-
-        color[i] = gtk_color_button_new ();
-        gtk_box_pack_start (GTK_BOX (hbox[i]), color[i], FALSE, FALSE, 0);
-        gtk_color_button_set_color (GTK_COLOR_BUTTON (color[i]), &(CONFIG_COLORS[i]));
-        gtk_widget_show (color[i]);
-
-        font[i] = gtk_font_button_new ();
-        gtk_widget_show (font[i]);
-        gtk_box_pack_start (GTK_BOX (hbox[i]), font[i], FALSE, FALSE, 0);
-        if (CONFIG_FONTS[i]) {
-            gtk_font_button_set_font_name (GTK_FONT_BUTTON (font[i]), CONFIG_FONTS[i]);
         }
     }
 
@@ -268,12 +218,8 @@ on_button_config (GtkMenuItem *menuitem, gpointer user_data)
         if (response == GTK_RESPONSE_OK || response == GTK_RESPONSE_APPLY) {
             CONFIG_NUM_LINES = gtk_spin_button_get_value_as_int (GTK_SPIN_BUTTON (num_lines));
             for (int i = 0; i < CONFIG_NUM_LINES; i++) {
-                if (CONFIG_FONTS[i])
-                    g_free ((gchar *)CONFIG_FONTS[i]);
                 if (CONFIG_FORMAT[i])
                     g_free ((gchar *)CONFIG_FORMAT[i]);
-                gtk_color_button_get_color (GTK_COLOR_BUTTON (color[i]), &CONFIG_COLORS[i]);
-                CONFIG_FONTS[i]= strdup (gtk_font_button_get_font_name (GTK_FONT_BUTTON (font[i])));
                 CONFIG_FORMAT[i] = strdup (gtk_entry_get_text (GTK_ENTRY (format[i])));
             }
             save_config ();
@@ -290,49 +236,15 @@ on_button_config (GtkMenuItem *menuitem, gpointer user_data)
 }
 
 static void
-update_text_context (text_context_t *ctx, const char *format, const char *font_name, GdkColor clr)
-{
-    if (ctx) {
-        if (ctx->format) {
-            free (ctx->format);
-        }
-        ctx->format = strdup (format);
-        if (ctx->desc) {
-            pango_font_description_free(ctx->desc);
-        }
-        ctx->desc = pango_font_description_from_string (font_name);
-        ctx->clr = clr;
-    }
-}
-
-static text_context_t *
-get_text_context (const char *format, const char *font_name, GdkColor clr)
-{
-    text_context_t *ctx = malloc (sizeof (text_context_t));
-    ctx->format = strdup (format);
-    ctx->desc = pango_font_description_from_string (font_name);
-    ctx->clr = clr;
-    return ctx;
-}
-
-static void
-free_text_context (text_context_t *ctx)
-{
-    if (ctx) {
-        if (ctx->format) {
-            free (ctx->format);
-        }
-        if (ctx->desc) {
-            pango_font_description_free(ctx->desc);
-        }
-        free (ctx);
-    }
-}
-
-static void
 w_playback_status_destroy (ddb_gtkui_widget_t *w) {
     w_playback_status_t *s = (w_playback_status_t *)w;
     deadbeef->vis_waveform_unlisten (w);
+    for (int i = 0; i < MAX_LINES; ++i) {
+        if (s->bytecode[i]) {
+            deadbeef->tf_free (s->bytecode[i]);
+            s->bytecode[i] = NULL;
+        }
+    }
     if (s->drawtimer) {
         g_source_remove (s->drawtimer);
         s->drawtimer = 0;
@@ -347,11 +259,50 @@ w_playback_status_destroy (ddb_gtkui_widget_t *w) {
     }
 }
 
+static void
+playback_status_set_label_text (gpointer user_data)
+{
+    w_playback_status_t *w = user_data;
+    deadbeef->mutex_lock (w->mutex);
+
+    char title[1024];
+    DB_playItem_t *playing = deadbeef->streamer_get_playing_track ();
+    if (playing) {
+        ddb_tf_context_t ctx = {
+            ._size = sizeof (ddb_tf_context_t),
+            .it = playing,
+            .plt = deadbeef->plt_get_curr (),
+            .idx = -1,
+            .id = -1
+        };
+
+        for (int i = 0; i < CONFIG_NUM_LINES; i++) {
+            deadbeef->tf_eval (&ctx, w->bytecode[i], title, sizeof (title));
+            gtk_label_set_markup (GTK_LABEL (w->label[i]), title);
+        }
+        deadbeef->pl_item_unref (playing);
+    }
+    else {
+        gtk_label_set_markup (GTK_LABEL (w->label[0]), "<span weight='bold' size='x-large'>Stopped</span>");
+        for (int i = 1; i < CONFIG_NUM_LINES; i++) {
+            gtk_label_set_markup (GTK_LABEL (w->label[i]), "");
+        }
+    }
+    deadbeef->mutex_unlock (w->mutex);
+}
+
 static gboolean
-playback_status_draw_cb (void *data) {
-    w_playback_status_t *s = data;
-    gtk_widget_queue_draw (s->drawarea);
+playback_status_update_cb (void *data) {
+    w_playback_status_t *w = data;
+    playback_status_set_label_text (w);
     return TRUE;
+}
+
+static gboolean
+playback_status_update_single_cb (void *data) {
+    w_playback_status_t *w = data;
+    playback_status_set_label_text (w);
+    return FALSE;
 }
 
 static gboolean
@@ -365,71 +316,8 @@ playback_status_set_refresh_interval (gpointer user_data, int interval)
         g_source_remove (w->drawtimer);
         w->drawtimer = 0;
     }
-    w->drawtimer = g_timeout_add (interval, playback_status_draw_cb, w);
+    w->drawtimer = g_timeout_add (interval, playback_status_update_cb, w);
     return TRUE;
-}
-
-static int
-playback_status_draw_text (cairo_t *cr, PangoFontDescription *desc, char *text, int x, int y, int width) {
-    PangoLayout *layout;
-    cairo_move_to (cr, x, y);
-
-    layout = pango_cairo_create_layout(cr);
-    pango_layout_set_width (layout, width*PANGO_SCALE);
-    pango_layout_set_ellipsize (layout, PANGO_ELLIPSIZE_END);
-    pango_layout_set_text(layout, text, -1);
-
-    pango_layout_set_font_description(layout, desc);
-
-    pango_cairo_show_layout(cr, layout);
-
-    int layout_width = 0;
-    int layout_height = 0;
-    pango_layout_get_pixel_size (layout, &layout_width, &layout_height);
-
-    g_object_unref(layout);
-    return layout_height;
-}
-
-static gboolean
-playback_status_draw (GtkWidget *widget, cairo_t *cr, gpointer user_data) {
-    w_playback_status_t *w = user_data;
-    deadbeef->mutex_lock (w->mutex);
-    GtkAllocation a;
-    gtk_widget_get_allocation (w->drawarea, &a);
-
-    const double width = a.width;
-    const double height = a.height;
-
-    const int x = 6;
-    int y = 6;
-    const int text_width = width - x;
-
-    char title[1024];
-    DB_playItem_t *playing = deadbeef->streamer_get_playing_track ();
-    if (playing) {
-        for (int i = 0; i < CONFIG_NUM_LINES; i++) {
-            deadbeef->pl_format_title (playing, -1, title, sizeof (title), -1, CONFIG_FORMAT[i]);
-            cairo_set_source_rgba (cr, CONFIG_COLORS[i].red/65535.f, CONFIG_COLORS[i].green/65535.f, CONFIG_COLORS[i].blue/65535.f, 1);
-            y += playback_status_draw_text (cr, font_desc[i], title, x, y, text_width);
-        }
-        deadbeef->pl_item_unref (playing);
-    }
-    else {
-        snprintf (title, sizeof (title), "%s", "-- / -- (stopped)");
-        cairo_set_source_rgba (cr, 0, 0, 0, 1);
-        y += playback_status_draw_text (cr, font_desc[0], title, x, y, text_width);
-    }
-    deadbeef->mutex_unlock (w->mutex);
-    return FALSE;
-}
-
-static gboolean
-playback_status_expose_event (GtkWidget *widget, GdkEventExpose *event, gpointer user_data) {
-    cairo_t *cr = gdk_cairo_create (gtk_widget_get_window (widget));
-    gboolean res = playback_status_draw (widget, cr, user_data);
-    cairo_destroy (cr);
-    return res;
 }
 
 static gboolean
@@ -447,7 +335,7 @@ playback_status_button_release_event (GtkWidget *widget, GdkEventButton *event, 
 {
     w_playback_status_t *w = user_data;
     if (event->button == 3) {
-      gtk_menu_popup (GTK_MENU (w->popup), NULL, NULL, NULL, w->drawarea, 0, gtk_get_current_event_time ());
+      gtk_menu_popup (GTK_MENU (w->popup), NULL, NULL, NULL, w->base.widget, 0, gtk_get_current_event_time ());
       return TRUE;
     }
     return TRUE;
@@ -463,22 +351,8 @@ playback_status_message (ddb_gtkui_widget_t *widget, uint32_t id, uintptr_t ctx,
             playback_status_set_refresh_interval (w, CONFIG_REFRESH_INTERVAL);
             break;
         case DB_EV_PAUSED:
-            if (deadbeef->get_output ()->state () == OUTPUT_STATE_PLAYING) {
-                playback_status_set_refresh_interval (w, CONFIG_REFRESH_INTERVAL);
-            }
-            else {
-                if (w->drawtimer) {
-                    g_source_remove (w->drawtimer);
-                    w->drawtimer = 0;
-                }
-            }
             break;
         case DB_EV_STOP:
-            if (w->drawtimer) {
-                g_source_remove (w->drawtimer);
-                w->drawtimer = 0;
-            }
-            gtk_widget_queue_draw (w->drawarea);
             break;
         case DB_EV_CONFIGCHANGED:
             on_config_changed (w, ctx);
@@ -492,6 +366,16 @@ static void
 w_playback_status_init (ddb_gtkui_widget_t *w) {
     w_playback_status_t *s = (w_playback_status_t *)w;
     load_config (w);
+    for (int i = 0; i < MAX_LINES; i++) {
+        if (i < CONFIG_NUM_LINES) {
+            gtk_widget_show (s->label[i]);
+            s->bytecode[i] = deadbeef->tf_compile (CONFIG_FORMAT[i]);
+        }
+        else {
+            gtk_widget_hide (s->label[i]);
+            s->bytecode[i] = NULL;
+        }
+    }
     deadbeef->mutex_lock (s->mutex);
 
     playback_status_set_refresh_interval (w, CONFIG_REFRESH_INTERVAL);
@@ -507,23 +391,25 @@ w_playback_status_create (void) {
     w->base.init = w_playback_status_init;
     w->base.destroy  = w_playback_status_destroy;
     w->base.message = playback_status_message;
-    w->drawarea = gtk_drawing_area_new ();
+    GtkWidget *vbox = gtk_vbox_new (FALSE, 4);
+    gtk_container_set_border_width (GTK_CONTAINER (vbox), 4);
+    for (int i = 0; i < MAX_LINES; ++i) {
+        w->label[i] = gtk_label_new (NULL);
+        gtk_label_set_ellipsize (GTK_LABEL (w->label[i]), PANGO_ELLIPSIZE_END);
+        gtk_box_pack_start (GTK_BOX (vbox), w->label[i], FALSE, FALSE, 0);
+        gtk_widget_show (w->label[i]);
+    }
     w->popup = gtk_menu_new ();
     w->popup_item = gtk_menu_item_new_with_mnemonic ("Configure");
     w->mutex = deadbeef->mutex_create ();
 
-    gtk_container_add (GTK_CONTAINER (w->base.widget), w->drawarea);
+    gtk_container_add (GTK_CONTAINER (w->base.widget), vbox);
     gtk_container_add (GTK_CONTAINER (w->popup), w->popup_item);
-    gtk_widget_show (w->drawarea);
     gtk_widget_show (w->popup);
+    gtk_widget_show (vbox);
     gtk_widget_show (w->popup_item);
 
     gtk_widget_set_size_request (w->base.widget, 300, 16);
-#if !GTK_CHECK_VERSION(3,0,0)
-    g_signal_connect_after ((gpointer) w->drawarea, "expose_event", G_CALLBACK (playback_status_expose_event), w);
-#else
-    g_signal_connect_after ((gpointer) w->drawarea, "draw", G_CALLBACK (playback_status_draw), w);
-#endif
     g_signal_connect_after ((gpointer) w->base.widget, "button_press_event", G_CALLBACK (playback_status_button_press_event), w);
     g_signal_connect_after ((gpointer) w->base.widget, "button_release_event", G_CALLBACK (playback_status_button_release_event), w);
     g_signal_connect_after ((gpointer) w->popup_item, "activate", G_CALLBACK (on_button_config), w);
