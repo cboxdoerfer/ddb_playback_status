@@ -280,6 +280,10 @@ playback_status_set_label_text (gpointer user_data)
             deadbeef->tf_eval (&ctx, w->bytecode[i], title, sizeof (title));
             gtk_label_set_markup (GTK_LABEL (w->label[i]), title);
         }
+        if (ctx.plt) {
+            deadbeef->plt_unref (ctx.plt);
+            ctx.plt = NULL;
+        }
         deadbeef->pl_item_unref (playing);
     }
     else {
