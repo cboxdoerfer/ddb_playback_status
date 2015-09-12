@@ -272,8 +272,6 @@ playback_status_set_label_text (gpointer user_data)
             ._size = sizeof (ddb_tf_context_t),
             .it = playing,
             .plt = deadbeef->plt_get_curr (),
-            .idx = -1,
-            .id = -1
         };
 
         for (int i = 0; i < CONFIG_NUM_LINES; i++) {
