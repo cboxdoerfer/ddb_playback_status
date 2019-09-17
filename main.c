@@ -322,13 +322,6 @@ playback_status_update_cb (void *data) {
 }
 
 static gboolean
-playback_status_update_single_cb (void *data) {
-    w_playback_status_t *w = data;
-    playback_status_set_label_text (w);
-    return FALSE;
-}
-
-static gboolean
 playback_status_set_refresh_interval (gpointer user_data, int interval)
 {
     w_playback_status_t *w = user_data;
