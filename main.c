@@ -144,8 +144,6 @@ static GtkWidget *format[MAX_LINES];
 static gboolean
 on_num_lines_changed (GtkSpinButton *spin, gpointer user_data)
 {
-    w_playback_status_t *w = user_data;
-
     int value = gtk_spin_button_get_value_as_int (spin);
     for (int i = 0; i < MAX_LINES; i++) {
         if (i < value) {
