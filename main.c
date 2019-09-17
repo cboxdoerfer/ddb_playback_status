@@ -196,7 +196,9 @@ on_button_config (GtkMenuItem *menuitem, gpointer user_data)
 
     for (int i = 0; i < MAX_LINES; i++) {
         format[i] = gtk_entry_new ();
-        gtk_widget_show (format[i]);
+        if (i < CONFIG_NUM_LINES) {
+            gtk_widget_show (format[i]);
+        }
         gtk_entry_set_invisible_char (GTK_ENTRY (format[i]), 8226);
         gtk_entry_set_activates_default (GTK_ENTRY (format[i]), TRUE);
         gtk_box_pack_start (GTK_BOX (vbox01), format[i], FALSE, FALSE, 0);
