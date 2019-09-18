@@ -106,10 +106,29 @@ load_config (gpointer user_data)
     deadbeef->mutex_unlock (w->mutex);
 }
 
+static void
+playback_status_escape_tf (const char *src, int src_len, char *dst, int dst_len)
+{
+    int j = 0;
+
+    for (int i = 0; i < src_len && src[i] && j < dst_len-1; i++) {
+        if (src[i] == '<' || src[i] == '>') {
+            dst[j++] = '\'';
+            dst[j++] = src[i];
+            dst[j++] = '\'';
+        } else {
+            dst[j++] = src[i];
+        }
+    }
+
+    dst[j] = 0;
+}
+
 static int
 on_config_changed (gpointer user_data, uintptr_t ctx)
 {
     w_playback_status_t *w = user_data;
+    char format_escaped[1024];
     load_config (user_data);
     for (int i = 0; i < MAX_LINES; i++) {
         if (w->bytecode[i]) {
@@ -118,7 +137,8 @@ on_config_changed (gpointer user_data, uintptr_t ctx)
         }
         if (i < CONFIG_NUM_LINES) {
             gtk_widget_show (w->label[i]);
-            w->bytecode[i] = deadbeef->tf_compile (CONFIG_FORMAT[i]);
+            playback_status_escape_tf (CONFIG_FORMAT[i], strlen(CONFIG_FORMAT[i]), format_escaped, sizeof(format_escaped));
+            w->bytecode[i] = deadbeef->tf_compile (format_escaped);
         }
         else {
             gtk_widget_hide (w->label[i]);
@@ -265,7 +285,7 @@ playback_status_set_label_text (gpointer user_data)
     w_playback_status_t *w = user_data;
     deadbeef->mutex_lock (w->mutex);
 
-    char title[1024];
+    char format_escaped[1024];
     DB_playItem_t *playing = deadbeef->streamer_get_playing_track ();
     if (playing) {
         ddb_tf_context_t ctx = {
@@ -275,8 +295,9 @@ playback_status_set_label_text (gpointer user_data)
         };
 
         for (int i = 0; i < CONFIG_NUM_LINES; i++) {
-            deadbeef->tf_eval (&ctx, w->bytecode[i], title, sizeof (title));
-            gtk_label_set_markup (GTK_LABEL (w->label[i]), title);
+            playback_status_escape_tf (CONFIG_FORMAT[i], strlen(CONFIG_FORMAT[i]), format_escaped, sizeof(format_escaped));
+            deadbeef->tf_eval (&ctx, w->bytecode[i], format_escaped, sizeof (format_escaped));
+            gtk_label_set_markup (GTK_LABEL (w->label[i]), format_escaped);
         }
         if (ctx.plt) {
             deadbeef->plt_unref (ctx.plt);
@@ -360,11 +381,13 @@ playback_status_message (ddb_gtkui_widget_t *widget, uint32_t id, uintptr_t ctx,
 static void
 w_playback_status_init (ddb_gtkui_widget_t *w) {
     w_playback_status_t *s = (w_playback_status_t *)w;
+    char format_escaped[1024];
     load_config (w);
     for (int i = 0; i < MAX_LINES; i++) {
         if (i < CONFIG_NUM_LINES) {
             gtk_widget_show (s->label[i]);
-            s->bytecode[i] = deadbeef->tf_compile (CONFIG_FORMAT[i]);
+            playback_status_escape_tf (CONFIG_FORMAT[i], strlen(CONFIG_FORMAT[i]), format_escaped, sizeof(format_escaped));
+            s->bytecode[i] = deadbeef->tf_compile (format_escaped);
         }
         else {
             gtk_widget_hide (s->label[i]);
