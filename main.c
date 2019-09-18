@@ -364,19 +364,7 @@ w_playback_status_init (ddb_gtkui_widget_t *w) {
     for (int i = 0; i < MAX_LINES; i++) {
         if (i < CONFIG_NUM_LINES) {
             gtk_widget_show (s->label[i]);
-
-            char *format = strdup (CONFIG_FORMAT[i]);
-            for (int j = 0; j < strlen (format); j++) {
-                if (format[j] == '<') {
-                    format[j] = 126;
-                } else if (format[j] == '>') {
-                    format[j] = 127;
-                }
-            }
-
-            s->bytecode[i] = deadbeef->tf_compile (format);
-
-            free(format);
+            s->bytecode[i] = deadbeef->tf_compile (CONFIG_FORMAT[i]);
         }
         else {
             gtk_widget_hide (s->label[i]);
