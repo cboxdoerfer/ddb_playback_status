@@ -118,19 +118,7 @@ on_config_changed (gpointer user_data, uintptr_t ctx)
         }
         if (i < CONFIG_NUM_LINES) {
             gtk_widget_show (w->label[i]);
-
-            char *format = strdup (CONFIG_FORMAT[i]);
-            for (int j = 0; j < strlen (format); j++) {
-                if (format[j] == '<') {
-                    format[j] = 126;
-                } else if (format[j] == '>') {
-                    format[j] = 127;
-                }
-            }
-
-            w->bytecode[i] = deadbeef->tf_compile (format);
-
-            free (format);
+            w->bytecode[i] = deadbeef->tf_compile (CONFIG_FORMAT[i]);
         }
         else {
             gtk_widget_hide (w->label[i]);
@@ -288,15 +276,6 @@ playback_status_set_label_text (gpointer user_data)
 
         for (int i = 0; i < CONFIG_NUM_LINES; i++) {
             deadbeef->tf_eval (&ctx, w->bytecode[i], title, sizeof (title));
-
-            for (int j = 0; j < strlen (title); j++) {
-                if (title[j] == 126) {
-                    title[j] = '<';
-                } else if (title[j] == 127) {
-                    title[j] = '>';
-                }
-            }
-
             gtk_label_set_markup (GTK_LABEL (w->label[i]), title);
         }
         if (ctx.plt) {
